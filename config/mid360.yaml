@@ -9,6 +9,11 @@
         runtime_pos_log_enable: false
         map_file_path: "./test.pcd"
 
+        base_frame: "onix_chassis/body"
+        map_frame: "map"
+        sensor_frame: "livox_frame"
+        senosr_init_frame: "lidar_init"
+
         common:
             lid_topic:  "/livox/lidar"
             imu_topic:  "/livox/imu"
