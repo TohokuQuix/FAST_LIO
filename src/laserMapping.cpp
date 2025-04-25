@@ -834,6 +834,12 @@ class LaserMappingNode : public rclcpp::Node {
                                             vector<double>());
     this->declare_parameter<vector<double>>("mapping.extrinsic_R",
                                             vector<double>());
+    this->declare_parameter<std::string>("base_frame", "base_link");
+    this->declare_parameter<std::string>("sensor_frame", "lidar_link");
+    this->declare_parameter<std::string>("map_frame", "map");
+    this->declare_parameter<std::string>("sensor_init_frame",
+                                        "sensor_init");
+
 
     this->get_parameter_or<bool>("publish.path_en", path_en, true);
     this->get_parameter_or<bool>("publish.effect_map_en", effect_pub_en, false);
@@ -886,7 +892,7 @@ class LaserMappingNode : public rclcpp::Node {
     this->get_parameter_or<std::string>("base_frame", base_frame, "base_link");
     this->get_parameter_or<std::string>("sensor_frame", sensor_frame,
                                         "lidar_link");
-    this->get_parameter_or<std::string>("sensor_init_frame", map_frame, "map");
+    this->get_parameter_or<std::string>("map_frame", map_frame, "map");
     this->get_parameter_or<std::string>("sensor_init_frame", sensor_init_frame,
                                         "sensor_init");
 

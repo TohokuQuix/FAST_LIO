@@ -2,27 +2,27 @@
     ros__parameters:
         feature_extract_enable: false
         point_filter_num: 3
-        max_iteration: 3
+        max_iteration: 10
         filter_size_surf: 0.5
         filter_size_map: 0.5
         cube_side_length: 1000.0
         runtime_pos_log_enable: false
         map_file_path: "./test.pcd"
 
-        base_frame: "onix_chassis/body"
+        base_frame: "chassis/body"
         map_frame: "map"
-        sensor_frame: "livox_frame"
-        senosr_init_frame: "lidar_init"
+        sensor_frame: "front_lidar"
+        senosr_init_frame: "chassis/body"
 
         common:
-            lid_topic:  "/livox/lidar"
-            imu_topic:  "/livox/imu"
+            lid_topic:  "/livox/lidar_172_16_94_141"
+            imu_topic:  "/livox/imu_172_16_94_141"
             time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
             time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
                                         # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
 
         preprocess:
-            lidar_type: 1                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 4 for any other pointcloud input
+            lidar_type: 4                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 4 for any other pointcloud input
             scan_line:  4
             blind: 0.5
             timestamp_unit: 3
@@ -35,7 +35,7 @@
             b_gyr_cov: 0.0001
             fov_degree:    360.0
             det_range:     100.0
-            extrinsic_est_en:  true      # true: enable the online estimation of IMU-LiDAR extrinsic
+            extrinsic_est_en:  false      # true: enable the online estimation of IMU-LiDAR extrinsic
             extrinsic_T: [ -0.011, -0.02329, 0.04412 ]
             extrinsic_R: [ 1., 0., 0.,
                             0., 1., 0.,
