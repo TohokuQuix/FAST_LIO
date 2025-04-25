@@ -56,12 +56,22 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_srvs/srv/trigger.hpp>
-#include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <livox_ros_driver2/msg/custom_msg.hpp>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
+
+// TF2関連
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/static_transform_broadcaster.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2_eigen/tf2_eigen.hpp>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
+ 
+
 
 #define INIT_TIME (0.1)
 #define LASER_POINT_COV (0.001)
@@ -518,39 +528,6 @@ void publish_frame_world(
     pubLaserCloudFull->publish(laserCloudmsg);
     publish_count -= PUBFRAME_PERIOD;
   }
-
-  /**************** save map ****************/
-  /* 1. make sure you have enough memories
-  /* 2. noted that pcd save will influence the real-time performences **/
-  /*
-  if (pcd_save_en)
-  {
-      int size = feats_undistort->points.size();
-      PointCloudXYZI::Ptr laserCloudWorld( \
-                      new PointCloudXYZI(size, 1));
-
-      for (int i = 0; i < size; i++)
-      {
-          RGBpointBodyToWorld(&feats_undistort->points[i], \
-                              &laserCloudWorld->points[i]);
-      }
-      *pcl_wait_save += *laserCloudWorld;
-
-      static int scan_wait_num = 0;
-      scan_wait_num ++;
-      if (pcl_wait_save->size() > 0 && pcd_save_interval > 0  && scan_wait_num
-  >= pcd_save_interval)
-      {
-          pcd_index ++;
-          string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") +
-  to_string(pcd_index) + string(".pcd")); pcl::PCDWriter pcd_writer; cout <<
-  "current scan saved to /PCD/" << all_points_dir << endl;
-          pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
-          pcl_wait_save->clear();
-          scan_wait_num = 0;
-      }
-  }
-  */
 }
 
 void publish_frame_body(
@@ -585,9 +562,13 @@ void publish_effect_world(
   laserCloudFullRes3.header.frame_id = map_frame;
   pubLaserCloudEffect->publish(laserCloudFullRes3);
 }
+#include <tf2_eigen/tf2_eigen.hpp>
 
-void publish_map(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-                     pubLaserCloudMap) {
+void publish_map(
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudMap,
+    const std::shared_ptr<tf2_ros::Buffer> &tf_buffer) {
+  
+  // 1. 最新点群をWorld座標に変換（sensor_frame基準）
   PointCloudXYZI::Ptr laserCloudFullRes(dense_pub_en ? feats_undistort
                                                      : feats_down_body);
   int size = laserCloudFullRes->points.size();
@@ -597,22 +578,42 @@ void publish_map(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     RGBpointBodyToWorld(&laserCloudFullRes->points[i],
                         &laserCloudWorld->points[i]);
   }
+
   *pcl_wait_pub += *laserCloudWorld;
 
-  sensor_msgs::msg::PointCloud2 laserCloudmsg;
-  pcl::toROSMsg(*pcl_wait_pub, laserCloudmsg);
-  // laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);
-  laserCloudmsg.header.stamp = get_ros_time(lidar_end_time);
-  laserCloudmsg.header.frame_id = map_frame;
-  pubLaserCloudMap->publish(laserCloudmsg);
+  // 2. TF: sensor_frame → base_frame をEigenに変換
+  geometry_msgs::msg::TransformStamped tf_sensor_to_base;
+  try {
+    tf_sensor_to_base = tf_buffer->lookupTransform(
+        base_frame, sensor_frame, tf2::TimePointZero);
+  } catch (tf2::TransformException &ex) {
+    RCLCPP_WARN(rclcpp::get_logger("lio_mapping"),
+                "TF lookup failed in publish_map: %s", ex.what());
+    return;
+  }
 
-  // sensor_msgs::msg::PointCloud2 laserCloudMap;
-  // pcl::toROSMsg(*featsFromMap, laserCloudMap);
-  // laserCloudMap.header.stamp = get_ros_time(lidar_end_time);
-  // laserCloudMap.header.frame_id = "camera_init";
-  // pubLaserCloudMap->publish(laserCloudMap);
+  Eigen::Isometry3d T_sensor_to_base = tf2::transformToEigen(tf_sensor_to_base);
+
+  // 3. pcl_wait_pub → base_frameへ変換
+  PointCloudXYZI::Ptr pcl_base(new PointCloudXYZI(pcl_wait_pub->size(), 1));
+  for (size_t i = 0; i < pcl_wait_pub->points.size(); ++i) {
+    const auto &pt = pcl_wait_pub->points[i];
+    Eigen::Vector3d pt_sensor(pt.x, pt.y, pt.z);
+    Eigen::Vector3d pt_base = T_sensor_to_base * pt_sensor;
+
+    pcl_base->points[i].x = pt_base.x();
+    pcl_base->points[i].y = pt_base.y();
+    pcl_base->points[i].z = pt_base.z();
+    pcl_base->points[i].intensity = pt.intensity;
+  }
+
+  // 4. Publish
+  sensor_msgs::msg::PointCloud2 msg;
+  pcl::toROSMsg(*pcl_base, msg);
+  msg.header.stamp = get_ros_time(lidar_end_time);
+  msg.header.frame_id = map_frame;
+  pubLaserCloudMap->publish(msg);
 }
-
 void save_to_pcd() {
   pcl::PCDWriter pcd_writer;
   pcd_writer.writeBinary(map_file_path, *pcl_wait_pub);
@@ -628,15 +629,28 @@ void set_posestamp(T &out) {
   out.pose.orientation.z = geoQuat.z;
   out.pose.orientation.w = geoQuat.w;
 }
-
-void publish_odometry(const rclcpp::Publisher<
-                          nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped,
-                      std::unique_ptr<tf2_ros::TransformBroadcaster> &tf_br) {
+bool is_first = true;
+void publish_odometry(
+    const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped,
+    std::shared_ptr<tf2_ros::StaticTransformBroadcaster> &tf_st_br,
+    std::unique_ptr<tf2_ros::TransformBroadcaster> &tf_br,
+    const std::shared_ptr<tf2_ros::Buffer> &tf_buffer) {
+  
+  // lidarから得られた odom（sensor_frame基準）を base_frame基準に変換する
+  geometry_msgs::msg::TransformStamped gt_base_to_sensor;
+  try {
+    gt_base_to_sensor= tf_buffer->lookupTransform(
+        base_frame,sensor_frame, tf2::TimePointZero);
+  } catch (tf2::TransformException &ex) {
+    RCLCPP_WARN(rclcpp::get_logger("lio_mapping"),
+                "TF lookup failed in publish_odometry: %s", ex.what());
+    return;
+  }
+  // update odomAftMapped
   odomAftMapped.header.frame_id = map_frame;
   odomAftMapped.child_frame_id = sensor_frame;
   odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
   set_posestamp(odomAftMapped.pose);
-  pubOdomAftMapped->publish(odomAftMapped);
   auto P = kf.get_P();
   for (int i = 0; i < 6; i++) {
     int k = i < 3 ? i + 3 : i - 3;
@@ -647,19 +661,62 @@ void publish_odometry(const rclcpp::Publisher<
     odomAftMapped.pose.covariance[i * 6 + 4] = P(k, 1);
     odomAftMapped.pose.covariance[i * 6 + 5] = P(k, 2);
   }
+  geometry_msgs::msg::TransformStamped gt_sensor_init_to_sensor;
+  gt_sensor_init_to_sensor.transform.translation.x = odomAftMapped.pose.pose.position.x;
+  gt_sensor_init_to_sensor.transform.translation.y = odomAftMapped.pose.pose.position.y;
+  gt_sensor_init_to_sensor.transform.translation.z = odomAftMapped.pose.pose.position.z;
+  gt_sensor_init_to_sensor.transform.rotation.x = odomAftMapped.pose.pose.orientation.x;
+  gt_sensor_init_to_sensor.transform.rotation.y = odomAftMapped.pose.pose.orientation.y;
+  gt_sensor_init_to_sensor.transform.rotation.z = odomAftMapped.pose.pose.orientation.z;
+  gt_sensor_init_to_sensor.transform.rotation.w = odomAftMapped.pose.pose.orientation.w;
 
-  geometry_msgs::msg::TransformStamped trans;
-  trans.header.frame_id = map_frame;
-  trans.child_frame_id = sensor_frame;
-  trans.header.stamp = get_ros_time(lidar_end_time);
-  trans.transform.translation.x = odomAftMapped.pose.pose.position.x;
-  trans.transform.translation.y = odomAftMapped.pose.pose.position.y;
-  trans.transform.translation.z = odomAftMapped.pose.pose.position.z;
-  trans.transform.rotation.w = odomAftMapped.pose.pose.orientation.w;
-  trans.transform.rotation.x = odomAftMapped.pose.pose.orientation.x;
-  trans.transform.rotation.y = odomAftMapped.pose.pose.orientation.y;
-  trans.transform.rotation.z = odomAftMapped.pose.pose.orientation.z;
-  tf_br->sendTransform(trans);
+  if(is_first){
+      geometry_msgs::msg::TransformStamped gt_map_to_sensor_init;
+
+      gt_map_to_sensor_init = gt_base_to_sensor;
+      gt_map_to_sensor_init.header.frame_id = map_frame;
+      gt_map_to_sensor_init.child_frame_id = sensor_init_frame;
+      tf_st_br->sendTransform(gt_map_to_sensor_init);
+  }
+  // 変換を Eigen に変換
+  Eigen::Isometry3d T_base_to_sensor = tf2::transformToEigen(gt_base_to_sensor);
+  // map → base_frame のPoseに変換
+  Eigen::Isometry3d T_sensor_init_to_sensor = tf2::transformToEigen(gt_sensor_init_to_sensor);
+  Eigen::Isometry3d T_sensor_init_to_base;
+  T_sensor_init_to_base.linear() << T_sensor_init_to_sensor.linear()*T_base_to_sensor.linear().inverse();
+  T_sensor_init_to_base.translation() << T_sensor_init_to_sensor.translation() - T_sensor_init_to_base.linear()*T_base_to_sensor.translation();
+
+  // Odometry メッセージを base_frame で出力
+  nav_msgs::msg::Odometry odom_out;
+  odom_out.header.frame_id = sensor_init_frame;
+  odom_out.child_frame_id = base_frame;
+  odom_out.header.stamp = odomAftMapped.header.stamp;
+  geometry_msgs::msg::TransformStamped gt_sensor_init_to_base = tf2::eigenToTransform(T_sensor_init_to_base);
+  odom_out.pose.pose.position.x = gt_sensor_init_to_base.transform.translation.x;
+  odom_out.pose.pose.position.y = gt_sensor_init_to_base.transform.translation.y;
+  odom_out.pose.pose.position.z = gt_sensor_init_to_base.transform.translation.z;
+  odom_out.pose.pose.orientation.x = gt_sensor_init_to_base.transform.rotation.x;
+  odom_out.pose.pose.orientation.y = gt_sensor_init_to_base.transform.rotation.y;
+  odom_out.pose.pose.orientation.z = gt_sensor_init_to_base.transform.rotation.z;
+  odom_out.pose.pose.orientation.w = gt_sensor_init_to_base.transform.rotation.w;
+
+  // 共分散はそのままコピー
+  odom_out.pose.covariance = odomAftMapped.pose.covariance;
+
+  pubOdomAftMapped->publish(odom_out);
+
+  // TF も base_frame で出力
+  geometry_msgs::msg::TransformStamped tf_out;
+  tf_out.header.frame_id = sensor_init_frame;
+  tf_out.child_frame_id = base_frame;
+  tf_out.header.stamp = get_ros_time(lidar_end_time);
+  tf_out.transform.translation.x = odom_out.pose.pose.position.x;
+  tf_out.transform.translation.y = odom_out.pose.pose.position.y;
+  tf_out.transform.translation.z = odom_out.pose.pose.position.z;
+  tf_out.transform.rotation = odom_out.pose.pose.orientation;
+
+  tf_br->sendTransform(tf_out);
+  is_first = false;
 }
 
 void publish_path(rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pubPath) {
@@ -977,7 +1034,11 @@ class LaserMappingNode : public rclcpp::Node {
     pubOdomAftMapped_ =
         this->create_publisher<nav_msgs::msg::Odometry>("/Odometry", 20);
     pubPath_ = this->create_publisher<nav_msgs::msg::Path>("/path", 20);
-    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+      // TFの初期化
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+    static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
 
     //------------------------------------------------------------------------------------------------------
     auto period_ms =
@@ -1113,7 +1174,7 @@ class LaserMappingNode : public rclcpp::Node {
       double t_update_end = omp_get_wtime();
 
       /******* Publish odometry *******/
-      publish_odometry(pubOdomAftMapped_, tf_broadcaster_);
+      publish_odometry(pubOdomAftMapped_,static_tf_broadcaster_, tf_broadcaster_,tf_buffer_);
 
       /*** add the feature points to map kdtree ***/
       t3 = omp_get_wtime();
@@ -1178,7 +1239,7 @@ class LaserMappingNode : public rclcpp::Node {
   }
 
   void map_publish_callback() {
-    if (map_pub_en) publish_map(pubLaserCloudMap_);
+    if (map_pub_en) publish_map(pubLaserCloudMap_,tf_buffer_);
   }
 
   void map_save_callback(std_srvs::srv::Trigger::Request::ConstSharedPtr req,
@@ -1210,7 +1271,11 @@ class LaserMappingNode : public rclcpp::Node {
   rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr
       sub_pcl_livox_;
 
-  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  // std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;  // TFのバッファ
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;  // TransformListener
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;  // 動的TF
+  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;  // 静的TF
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr map_pub_timer_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr map_save_srv_;
@@ -1220,7 +1285,7 @@ class LaserMappingNode : public rclcpp::Node {
   double deltaT, deltaR, aver_time_consu = 0, aver_time_icp = 0,
                          aver_time_match = 0, aver_time_incre = 0,
                          aver_time_solve = 0, aver_time_const_H_time = 0;
-  bool flg_EKF_converged, EKF_stop_flg = 0;
+  bool flg_EKF_converged, EKF_stop_flg = false;
   double epsi[23] = {0.001};
 
   FILE *fp;

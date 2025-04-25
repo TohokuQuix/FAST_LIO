@@ -12,7 +12,7 @@
         base_frame: "chassis/body"
         map_frame: "map"
         sensor_frame: "front_lidar"
-        senosr_init_frame: "chassis/body"
+        senosr_init_frame: "lidar_init"
 
         common:
             lid_topic:  "/livox/lidar_172_16_94_141"
