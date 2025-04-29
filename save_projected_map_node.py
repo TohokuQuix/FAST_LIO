@@ -16,17 +16,22 @@ class MapSaver(Node):
     def __init__(self):
         super().__init__('save_projected_map_node')
 
-        self.projected_map_sub = self.create_subscription(
-            OccupancyGrid,
-            '/projected_map',
-            self.projected_map_callback,
-            10)
+        self.save_2d_map = False   # <== Turn ON or OFF saving 2D map
+        self.save_3d_map = True    # <== Turn ON or OFF saving 3D map
 
-        self.occupied_cells_sub = self.create_subscription(
-            MarkerArray,
-            '/occupied_cells_vis_array',
-            self.occupied_cells_callback,
-            10)
+        if self.save_2d_map:
+            self.projected_map_sub = self.create_subscription(
+                OccupancyGrid,
+                '/projected_map',
+                self.projected_map_callback,
+                10)
+
+        if self.save_3d_map:
+            self.occupied_cells_sub = self.create_subscription(
+                MarkerArray,
+                '/occupied_cells_vis_array',
+                self.occupied_cells_callback,
+                10)
 
         self.projected_map = None
         self.occupied_cells = None
@@ -47,7 +52,7 @@ class MapSaver(Node):
 
         warnings.filterwarnings("ignore", category=FutureWarning)
 
-        if self.projected_map:
+        if self.save_2d_map and self.projected_map:
             file_path = os.path.join(self.save_dir, f'map_{now_str}.pgm')
             self.save_pgm(file_path, self.projected_map)
             os.chmod(file_path, 0o777)
@@ -58,7 +63,7 @@ class MapSaver(Node):
             
             self.get_logger().info(f"Saved 2D map to {file_path} and {yaml_path}")
 
-        if self.occupied_cells:
+        if self.save_3d_map and self.occupied_cells:
             ply_path = os.path.join(self.save_dir, f'occupied_cells_{now_str}.ply')
             self.save_occupied_cells_ply(ply_path, self.occupied_cells)
             os.chmod(ply_path, 0o777)
