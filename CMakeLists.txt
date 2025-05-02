@@ -49,6 +49,7 @@ find_path(MATPLOTLIB_CPP_INCLUDE_DIRS "matplotlibcpp.h")
 
 # ROS dependencies
 find_package(ament_cmake REQUIRED)
+find_package(rclpy REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -127,6 +128,13 @@ ament_target_dependencies(fastlio_mapping ${dependencies})
 
 # ---------------- Install --------------- #
 install(TARGETS fastlio_mapping
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install Python scripts
+install(
+  PROGRAMS
+    save_projected_map_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
