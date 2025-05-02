@@ -1,22 +1,21 @@
 from launch import LaunchDescription
-from launch_ros.actions import Node
+from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
+
 import os
 
 def generate_launch_description():
-    package_name = 'fast_lio'
-    executable_path = os.path.join(
-        '/workspace/src/onix/install', package_name, 'lib', package_name, 'save_projected_map_node.py'
-    )
+    save_dir = LaunchConfiguration('save_dir')
+    script_path = LaunchConfiguration('script_path')
 
     return LaunchDescription([
-        Node(
-            package=package_name,
-            executable=executable_path,
+        DeclareLaunchArgument('save_dir', default_value='/workspace/saved_data'),
+        DeclareLaunchArgument('script_path', default_value='/workspace/src/onix/dep/FAST_LIO/save_projected_map_node.py'),
+
+        ExecuteProcess(
+            cmd=['python3', script_path],
             name='save_projected_map_node',
             output='screen',
-            parameters=[
-                {"save_directory": "/workspace/saved_data"},
-                {"save_interval_sec": 30.0}
-            ]
-        )
+            additional_env={'SAVE_DIR': save_dir}
+        ),
     ])

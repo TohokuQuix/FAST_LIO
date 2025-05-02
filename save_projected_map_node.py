@@ -36,7 +36,7 @@ class MapSaver(Node):
         self.projected_map = None
         self.occupied_cells = None
 
-        self.save_dir = '/workspace/saved_data'
+        self.save_dir = os.environ.get('SAVE_DIR', '/workspace/saved_data')
         os.makedirs(self.save_dir, exist_ok=True)
 
         self.timer = self.create_timer(30.0, self.save_maps)
