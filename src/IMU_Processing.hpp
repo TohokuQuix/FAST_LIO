@@ -190,9 +190,26 @@ void ImuProcess::IMU_init(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 
     N ++;
   }
   state_ikfom init_state = kf_state.get_x();
-  init_state.grav = S2(- mean_acc / mean_acc.norm() * G_m_s2);
-  
-  //state_inout.rot = Eye3d; // Exp(mean_acc.cross(V3D(0, 0, -1 / scale_gravity)));
+  const V3D target_acc_dir(0.0, 0.0, 1.0);
+  const V3D measured_acc_dir = mean_acc.normalized();
+  const double acc_alignment =
+      CONSTRAIN(measured_acc_dir.dot(target_acc_dir), -1.0, 1.0);
+  const V3D rot_axis = measured_acc_dir.cross(target_acc_dir);
+
+  M3D init_rot = Eye3d;
+  if (rot_axis.norm() > 1e-6) {
+    const V3D rot_vec = rot_axis.normalized() * std::acos(acc_alignment);
+    init_rot = Exp(rot_vec.x(), rot_vec.y(), rot_vec.z());
+  } else if (acc_alignment < 0.0) {
+    // Opposite vectors: choose an arbitrary roll axis to flip gravity upright.
+    init_rot = Exp(V3D(M_PI, 0.0, 0.0));
+  }
+
+  // Keep the world frame level by aligning the initial accelerometer direction
+  // to gravity. Yaw remains unobservable from gravity alone.
+  init_state.rot = SO3(init_rot);
+  init_state.grav = S2(V3D(0.0, 0.0, -G_m_s2));
+
   init_state.bg  = mean_gyr;
   init_state.offset_T_L_I = Lidar_T_wrt_IMU;
   init_state.offset_R_L_I = Lidar_R_wrt_IMU;
