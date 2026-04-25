@@ -48,7 +48,7 @@ class MapSaver(Node):
         self.occupied_cells = msg
 
     def save_maps(self):
-        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        now_str = datetime.now().strftime("%H-%M-%S")
 
         warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -64,7 +64,7 @@ class MapSaver(Node):
             self.get_logger().info(f"Saved 2D map to {file_path} and {yaml_path}")
 
         if self.save_3d_map and self.occupied_cells:
-            ply_path = os.path.join(self.save_dir, f'occupied_cells_{now_str}.ply')
+            ply_path = os.path.join(self.save_dir, f'RoboCup2026_Quix_Mapping_00_{now_str}.ply')
             self.save_occupied_cells_ply(ply_path, self.occupied_cells)
             os.chmod(ply_path, 0o777)
             self.get_logger().info(f"Saved 3D occupied cells to {ply_path}")
