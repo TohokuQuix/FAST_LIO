@@ -15,7 +15,7 @@
         sensor_init_frame: "lidar_init"
 
         common:
-            lid_topic:  "/livox/lidar_172_16_94_141"
+            lid_topic:  "/livox/merged_lidar"
             imu_topic:  "/livox/imu_172_16_94_141"
             time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
             time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
