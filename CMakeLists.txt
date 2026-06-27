@@ -126,6 +126,21 @@ endif()
 
 ament_target_dependencies(fastlio_mapping ${dependencies})
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_map_publish
+    test/test_map_publish.cpp
+    include/ikd-Tree/ikd_Tree.cpp
+  )
+  target_include_directories(test_map_publish PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${PCL_INCLUDE_DIRS}
+  )
+  target_link_libraries(test_map_publish ${PCL_LIBRARIES} Eigen3::Eigen)
+endif()
+
 # ---------------- Install --------------- #
 install(TARGETS fastlio_mapping
   DESTINATION lib/${PROJECT_NAME}

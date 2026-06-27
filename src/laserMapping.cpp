@@ -61,6 +61,7 @@
 #include <livox_ros_driver2/msg/custom_msg.hpp>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
+#include "map_publish.h"
 
 // TF2関連
 #include <tf2_ros/buffer.h>
@@ -504,7 +505,6 @@ void map_incremental() {
   kdtree_incremental_time = omp_get_wtime() - st_time;
 }
 
-PointCloudXYZI::Ptr pcl_wait_pub(new PointCloudXYZI());
 PointCloudXYZI::Ptr pcl_wait_save(new PointCloudXYZI());
 void publish_frame_world(
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
@@ -568,32 +568,21 @@ void publish_map(
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudMap,
     const std::shared_ptr<tf2_ros::Buffer> &tf_buffer) {
   (void)tf_buffer;
-
-  // Accumulate and publish the map directly in map_frame.
-  // pcl_wait_pub already stores points transformed into world coordinates by
-  // RGBpointBodyToWorld(), so applying sensor->base again would tilt/distort the map.
-  PointCloudXYZI::Ptr laserCloudFullRes(dense_pub_en ? feats_undistort
-                                                     : feats_down_body);
-  int size = laserCloudFullRes->points.size();
-  PointCloudXYZI::Ptr laserCloudWorld(new PointCloudXYZI(size, 1));
-
-  for (int i = 0; i < size; i++) {
-    RGBpointBodyToWorld(&laserCloudFullRes->points[i],
-                        &laserCloudWorld->points[i]);
-  }
-
-  *pcl_wait_pub += *laserCloudWorld;
-
-  // Publish the accumulated world/map-frame cloud as-is.
+  PointCloudXYZI::Ptr map_cloud = build_map_cloud_from_ikdtree(ikdtree);
+  PointCloudXYZI::Ptr publish_cloud =
+      downsample_map_cloud_for_publish(*map_cloud, filter_size_map_min);
   sensor_msgs::msg::PointCloud2 msg;
-  pcl::toROSMsg(*pcl_wait_pub, msg);
+  pcl::toROSMsg(*publish_cloud, msg);
   msg.header.stamp = get_ros_time(lidar_end_time);
   msg.header.frame_id = map_frame;
   pubLaserCloudMap->publish(msg);
 }
 void save_to_pcd() {
   pcl::PCDWriter pcd_writer;
-  pcd_writer.writeBinary(map_file_path, *pcl_wait_pub);
+  PointCloudXYZI::Ptr map_cloud = build_map_cloud_from_ikdtree(ikdtree);
+  PointCloudXYZI::Ptr save_cloud =
+      downsample_map_cloud_for_publish(*map_cloud, filter_size_map_min);
+  pcd_writer.writeBinary(map_file_path, *save_cloud);
 }
 
 template <typename T>
