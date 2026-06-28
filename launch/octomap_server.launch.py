@@ -10,7 +10,7 @@ def generate_launch_description():
             output='screen',
             parameters=[
                 {
-                    'frame_id': 'map',
+                    'frame_id': 'initial_base_link', #'map',
                     'resolution': 0.1,  # adjust to your desired voxel size
                     'sensor_model/max_range': 5.0,
                     'sensor_model/hit': 0.7,

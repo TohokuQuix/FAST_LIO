@@ -10,7 +10,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('save_dir', default_value='/workspace/saved_data'),
-        DeclareLaunchArgument('script_path', default_value='/workspace/src/onix/dep/FAST_LIO/save_projected_map_node.py'),
+        DeclareLaunchArgument('script_path', default_value='/media/data/cheekybot_ws/src/FAST_LIO/save_projected_map_node.py'),
 
         ExecuteProcess(
             cmd=['python3', script_path],
